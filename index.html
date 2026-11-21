@@ -33,10 +33,9 @@
     .footer-bar { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px; margin-top: 6px; }
     .price-tag { font-size: 18px; font-weight: 800; color: #ff3b30; }
     .btn-wa { background: #25D366; color: #fff; border: none; padding: 10px 16px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .touch-hint { position: absolute; top: 50vh; left: 0; right: 0; text-align: center; font-size: 11px; color: #666; pointer-events: none; }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 </head>
 <body>
   <div class="header">
@@ -44,6 +43,7 @@
     <div class="badge">3D PPF</div>
   </div>
   <div id="canvas-container"></div>
+  <div class="touch-hint">👈 Parmağınızla aracı döndürün 👉</div>
   <div class="mobile-sheet">
     <div>
       <div class="row-title">Araç Modeli</div>
@@ -79,99 +79,185 @@
     </div>
   </div>
   <script>
-    let scene, camera, renderer, controls, carGroup, bodyMesh, hoodMesh, bumperMesh;
+    let scene, camera, renderer, carGroup, bodyMesh, hoodMesh, bumperMesh;
     let curType = 'suv', curColor = '#111', curFinish = 'gloss', curPkg = 'front';
+    let isDragging = false, prevMouseX = 0, rotY = 0.5, rotX = 0.3;
+
     function init() {
       const box = document.getElementById('canvas-container');
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x0c0e12);
+
       camera = new THREE.PerspectiveCamera(45, window.innerWidth / (window.innerHeight * 0.58), 0.1, 50);
-      camera.position.set(4.5, 2.0, 4.5);
-      renderer = new THREE.WebGLRenderer({ antialias: true });
+      camera.position.set(0, 2.0, 5.5);
+      camera.lookAt(0, 0.5, 0);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
       renderer.setSize(window.innerWidth, window.innerHeight * 0.58);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       box.appendChild(renderer.domElement);
-      controls = new THREE.OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
-      controls.maxPolarAngle = Math.PI / 2 - 0.05;
-      controls.target.set(0, 0.5, 0);
-      scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-      const dir = new THREE.DirectionalLight(0xffffff, 1.8);
-      dir.position.set(5, 8, 5);
-      scene.add(dir);
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+      const dirLight = new THREE.DirectionalLight(0xffffff, 1.8);
+      dirLight.position.set(5, 8, 5);
+      scene.add(dirLight);
+
+      const topLight = new THREE.DirectionalLight(0xaaccff, 0.8);
+      topLight.position.set(-5, 5, -5);
+      scene.add(topLight);
+
+      // Zemin Izgarası
+      const grid = new THREE.GridHelper(10, 10, 0x333344, 0x1a1a22);
+      grid.position.y = -0.01;
+      scene.add(grid);
+
       buildCar(curType);
+
+      // Dokunmatik ve Fare Döndürme
+      const canvas = renderer.domElement;
+      const start = (x) => { isDragging = true; prevMouseX = x; };
+      const move = (x) => {
+        if (!isDragging || !carGroup) return;
+        const delta = x - prevMouseX;
+        rotY += delta * 0.012;
+        carGroup.rotation.y = rotY;
+        prevMouseX = x;
+      };
+      const end = () => { isDragging = false; };
+
+      canvas.addEventListener('mousedown', (e) => start(e.clientX));
+      window.addEventListener('mousemove', (e) => move(e.clientX));
+      window.addEventListener('mouseup', end);
+
+      canvas.addEventListener('touchstart', (e) => start(e.touches[0].clientX));
+      window.addEventListener('touchmove', (e) => move(e.touches[0].clientX));
+      window.addEventListener('touchend', end);
+
       animate();
     }
+
     function buildCar(type) {
       if(carGroup) scene.remove(carGroup);
       carGroup = new THREE.Group();
-      const isSUV = type === 'suv';
-      const mat = new THREE.MeshPhysicalMaterial({
+      const isSUV = (type === 'suv');
+
+      const mat = new THREE.MeshStandardMaterial({
         color: new THREE.Color(curColor),
-        metalness: 0.5,
-        roughness: curFinish === 'matte' ? 0.6 : 0.08,
-        clearcoat: curFinish === 'matte' ? 0.05 : 1.0
+        metalness: 0.4,
+        roughness: curFinish === 'matte' ? 0.6 : 0.1
       });
-      bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(1.7, isSUV ? 0.9 : 0.7, 3.8), mat);
-      bodyMesh.position.y = 0.65;
+
+      // Gövde
+      bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(1.8, isSUV ? 0.85 : 0.65, 3.6), mat);
+      bodyMesh.position.y = 0.6;
       carGroup.add(bodyMesh);
-      hoodMesh = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.1, 1.1), mat.clone());
-      hoodMesh.position.set(0, isSUV ? 1.15 : 1.02, 1.1);
+
+      // Kabin
+      const cabinMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.1 });
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.55, 2.0), cabinMat);
+      cabin.position.set(0, isSUV ? 1.25 : 1.1, -0.2);
+      carGroup.add(cabin);
+
+      // Ön Kaput
+      hoodMesh = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.1, 1.1), mat.clone());
+      hoodMesh.position.set(0, isSUV ? 1.05 : 0.95, 1.1);
       carGroup.add(hoodMesh);
-      bumperMesh = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.35, 0.3), mat.clone());
-      bumperMesh.position.set(0, 0.4, 2.0);
+
+      // Ön Tampon
+      bumperMesh = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.3, 0.25), mat.clone());
+      bumperMesh.position.set(0, 0.35, 1.9);
       carGroup.add(bumperMesh);
+
+      // Farlar
+      const lightMat = new THREE.MeshBasicMaterial({ color: 0x99ddff });
+      const l1 = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.08, 0.05), lightMat);
+      l1.position.set(-0.6, 0.65, 1.92);
+      const l2 = l1.clone();
+      l2.position.x = 0.6;
+      carGroup.add(l1);
+      carGroup.add(l2);
+
+      // Tekerlekler
+      const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111, roughness: 0.8 });
+      const makeW = (x, z) => {
+        const w = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.2, 16), wheelMat);
+        w.rotation.z = Math.PI / 2;
+        w.position.set(x, 0.32, z);
+        carGroup.add(w);
+      };
+      makeW(0.95, 1.1); makeW(-0.95, 1.1); makeW(0.95, -1.1); makeW(-0.95, -1.1);
+
+      carGroup.rotation.y = rotY;
       scene.add(carGroup);
       updatePPF();
     }
+
     function updatePPF() {
-      const isMatte = curFinish === 'matte';
+      const isMatte = (curFinish === 'matte');
       [bodyMesh, hoodMesh, bumperMesh].forEach(m => {
+        if (!m) return;
         m.material.color.set(curColor);
-        m.material.roughness = isMatte ? 0.62 : 0.08;
-        m.material.clearcoat = isMatte ? 0.05 : 1.0;
+        m.material.roughness = isMatte ? 0.65 : 0.1;
         m.material.emissive.setHex(0x000000);
       });
-      const hl = (m) => { m.material.emissive.setHex(0x00ffff); m.material.emissiveIntensity = 0.2; };
-      if(curPkg === 'front') { hl(hoodMesh); hl(bumperMesh); }
-      else { hl(bodyMesh); hl(hoodMesh); hl(bumperMesh); }
+
+      const hl = (m) => {
+        m.material.emissive.setHex(0x00ffff);
+        m.material.emissiveIntensity = 0.35;
+      };
+
+      if(curPkg === 'front') {
+        hl(hoodMesh);
+        hl(bumperMesh);
+      } else {
+        hl(bodyMesh);
+        hl(hoodMesh);
+        hl(bumperMesh);
+      }
     }
+
     window.setType = (t) => {
       curType = t;
       document.getElementById('b-suv').classList.toggle('active', t==='suv');
       document.getElementById('b-sedan').classList.toggle('active', t==='sedan');
       buildCar(t);
     };
+
     window.setCol = (c, el) => {
       curColor = c;
       document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
       el.classList.add('active');
       updatePPF();
     };
+
     window.setFinish = (f) => {
       curFinish = f;
       document.getElementById('b-gloss').classList.toggle('active', f==='gloss');
       document.getElementById('b-matte').classList.toggle('active', f==='matte');
       updatePPF();
     };
+
     window.setPkg = (p) => {
       curPkg = p;
       document.getElementById('p-front').classList.toggle('active', p==='front');
       document.getElementById('p-full').classList.toggle('active', p==='full');
       document.getElementById('price-val').innerText = p === 'front' ? '18.500 ₺' : '39.999 ₺';
       updatePPF();
-      if(p==='front') gsap.to(camera.position, {x:1.8, y:1.4, z:3.6, duration:1});
-      else gsap.to(camera.position, {x:4.5, y:2.0, z:4.5, duration:1});
     };
+
     window.sendWA = () => {
-      const t = `Zoomcar 3D Konfigürasyon:\nAraç: ${curType.toUpperCase()}\nKaplama: ${curFinish==='gloss'?'Parlak':'Mat'}\nPaket: ${curPkg==='front'?'Ön Koruma':'Komple PPF'}\nTutar: ${document.getElementById('price-val').innerText}`;
+      const t = `Zoomcar 3D Konfigürasyon:\nAraç: ${curType.toUpperCase()}\nKaplama: ${curFinish==='gloss'?'Parlak TPU':'Mat Saten'}\nPaket: ${curPkg==='front'?'Ön Koruma':'Komple PPF'}\nTutar: ${document.getElementById('price-val').innerText}`;
       window.open(`https://wa.me/905000000000?text=${encodeURIComponent(t)}`);
     };
+
     function animate() {
       requestAnimationFrame(animate);
-      controls.update();
+      if (!isDragging && carGroup) {
+        carGroup.rotation.y += 0.003; // Otomatik yavaş dönüş
+      }
       renderer.render(scene, camera);
     }
+
     window.onload = init;
   </script>
 </body>

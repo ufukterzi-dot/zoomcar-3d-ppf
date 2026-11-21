@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Zoomcar 3D PPF Studio</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; -webkit-tap-highlight-color: transparent; }
+    body { background: #0c0e12; color: #fff; overflow: hidden; width: 100vw; height: 100vh; touch-action: none; }
+    #canvas-container { width: 100vw; height: 58vh; position: absolute; top: 0; left: 0; }
+    .header { position: absolute; top: 14px; left: 16px; z-index: 10; display: flex; align-items: center; gap: 8px; }
+    .logo { font-size: 20px; font-weight: 900; background: linear-gradient(135deg, #ff3b30, #ff9500); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .badge { background: rgba(255,255,255,0.1); padding: 3px 8px; border-radius: 12px; font-size: 10px; color: #aaa; }
+    .mobile-sheet {
+      position: absolute; bottom: 0; left: 0; right: 0; height: 44vh;
+      background: rgba(18, 21, 28, 0.95); backdrop-filter: blur(15px);
+      border-top: 1px solid rgba(255,255,255,0.12);
+      border-radius: 20px 20px 0 0; padding: 16px; z-index: 10;
+      display: flex; flex-direction: column; justify-content: space-between;
+      overflow-y: auto;
+    }
+    .row-title { font-size: 11px; font-weight: 700; color: #888; text-transform: uppercase; margin-bottom: 6px; }
+    .btn-group { display: flex; gap: 6px; margin-bottom: 12px; }
+    .btn-m {
+      flex: 1; padding: 9px 4px; font-size: 11px; font-weight: 600;
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+      color: #ddd; border-radius: 10px; cursor: pointer; text-align: center;
+    }
+    .btn-m.active { background: #ff3344; border-color: #ff3344; color: #fff; }
+    .colors { display: flex; gap: 10px; margin-bottom: 12px; }
+    .swatch { width: 28px; height: 28px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+    .swatch.active { border-color: #fff; transform: scale(1.15); }
+    .footer-bar { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px; margin-top: 6px; }
+    .price-tag { font-size: 18px; font-weight: 800; color: #ff3b30; }
+    .btn-wa { background: #25D366; color: #fff; border: none; padding: 10px 16px; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">ZOOMCAR</div>
+    <div class="badge">3D PPF</div>
+  </div>
+  <div id="canvas-container"></div>
+  <div class="mobile-sheet">
+    <div>
+      <div class="row-title">Araç Modeli</div>
+      <div class="btn-group">
+        <div class="btn-m active" id="b-suv" onclick="setType('suv')">SUV (Togg)</div>
+        <div class="btn-m" id="b-sedan" onclick="setType('sedan')">Sedan (BMW)</div>
+      </div>
+      <div class="row-title">Renk & Doku</div>
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="colors">
+          <div class="swatch active" style="background:#111;" onclick="setCol('#111', this)"></div>
+          <div class="swatch" style="background:#1e3a8a;" onclick="setCol('#1e3a8a', this)"></div>
+          <div class="swatch" style="background:#991b1b;" onclick="setCol('#991b1b', this)"></div>
+          <div class="swatch" style="background:#e2e8f0;" onclick="setCol('#e2e8f0', this)"></div>
+        </div>
+        <div class="btn-group" style="margin-bottom:0; width:140px;">
+          <div class="btn-m active" id="b-gloss" onclick="setFinish('gloss')">Parlak</div>
+          <div class="btn-m" id="b-matte" onclick="setFinish('matte')">Mat</div>
+        </div>
+      </div>
+      <div class="row-title" style="margin-top:10px;">Paket</div>
+      <div class="btn-group">
+        <div class="btn-m active" id="p-front" onclick="setPkg('front')">Ön Koruma</div>
+        <div class="btn-m" id="p-full" onclick="setPkg('full')">Komple PPF</div>
+      </div>
+    </div>
+    <div class="footer-bar">
+      <div>
+        <div style="font-size:10px; color:#888;">TOPLAM TUTAR</div>
+        <div class="price-tag" id="price-val">18.500 ₺</div>
+      </div>
+      <button class="btn-wa" onclick="sendWA()">WhatsApp Teklif</button>
+    </div>
+  </div>
+  <script>
+    let scene, camera, renderer, controls, carGroup, bodyMesh, hoodMesh, bumperMesh;
+    let curType = 'suv', curColor = '#111', curFinish = 'gloss', curPkg = 'front';
+    function init() {
+      const box = document.getElementById('canvas-container');
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0c0e12);
+      camera = new THREE.PerspectiveCamera(45, window.innerWidth / (window.innerHeight * 0.58), 0.1, 50);
+      camera.position.set(4.5, 2.0, 4.5);
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight * 0.58);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      box.appendChild(renderer.domElement);
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.maxPolarAngle = Math.PI / 2 - 0.05;
+      controls.target.set(0, 0.5, 0);
+      scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+      const dir = new THREE.DirectionalLight(0xffffff, 1.8);
+      dir.position.set(5, 8, 5);
+      scene.add(dir);
+      buildCar(curType);
+      animate();
+    }
+    function buildCar(type) {
+      if(carGroup) scene.remove(carGroup);
+      carGroup = new THREE.Group();
+      const isSUV = type === 'suv';
+      const mat = new THREE.MeshPhysicalMaterial({
+        color: new THREE.Color(curColor),
+        metalness: 0.5,
+        roughness: curFinish === 'matte' ? 0.6 : 0.08,
+        clearcoat: curFinish === 'matte' ? 0.05 : 1.0
+      });
+      bodyMesh = new THREE.Mesh(new THREE.BoxGeometry(1.7, isSUV ? 0.9 : 0.7, 3.8), mat);
+      bodyMesh.position.y = 0.65;
+      carGroup.add(bodyMesh);
+      hoodMesh = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.1, 1.1), mat.clone());
+      hoodMesh.position.set(0, isSUV ? 1.15 : 1.02, 1.1);
+      carGroup.add(hoodMesh);
+      bumperMesh = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.35, 0.3), mat.clone());
+      bumperMesh.position.set(0, 0.4, 2.0);
+      carGroup.add(bumperMesh);
+      scene.add(carGroup);
+      updatePPF();
+    }
+    function updatePPF() {
+      const isMatte = curFinish === 'matte';
+      [bodyMesh, hoodMesh, bumperMesh].forEach(m => {
+        m.material.color.set(curColor);
+        m.material.roughness = isMatte ? 0.62 : 0.08;
+        m.material.clearcoat = isMatte ? 0.05 : 1.0;
+        m.material.emissive.setHex(0x000000);
+      });
+      const hl = (m) => { m.material.emissive.setHex(0x00ffff); m.material.emissiveIntensity = 0.2; };
+      if(curPkg === 'front') { hl(hoodMesh); hl(bumperMesh); }
+      else { hl(bodyMesh); hl(hoodMesh); hl(bumperMesh); }
+    }
+    window.setType = (t) => {
+      curType = t;
+      document.getElementById('b-suv').classList.toggle('active', t==='suv');
+      document.getElementById('b-sedan').classList.toggle('active', t==='sedan');
+      buildCar(t);
+    };
+    window.setCol = (c, el) => {
+      curColor = c;
+      document.querySelectorAll('.swatch').forEach(s => s.classList.remove('active'));
+      el.classList.add('active');
+      updatePPF();
+    };
+    window.setFinish = (f) => {
+      curFinish = f;
+      document.getElementById('b-gloss').classList.toggle('active', f==='gloss');
+      document.getElementById('b-matte').classList.toggle('active', f==='matte');
+      updatePPF();
+    };
+    window.setPkg = (p) => {
+      curPkg = p;
+      document.getElementById('p-front').classList.toggle('active', p==='front');
+      document.getElementById('p-full').classList.toggle('active', p==='full');
+      document.getElementById('price-val').innerText = p === 'front' ? '18.500 ₺' : '39.999 ₺';
+      updatePPF();
+      if(p==='front') gsap.to(camera.position, {x:1.8, y:1.4, z:3.6, duration:1});
+      else gsap.to(camera.position, {x:4.5, y:2.0, z:4.5, duration:1});
+    };
+    window.sendWA = () => {
+      const t = `Zoomcar 3D Konfigürasyon:\nAraç: ${curType.toUpperCase()}\nKaplama: ${curFinish==='gloss'?'Parlak':'Mat'}\nPaket: ${curPkg==='front'?'Ön Koruma':'Komple PPF'}\nTutar: ${document.getElementById('price-val').innerText}`;
+      window.open(`https://wa.me/905000000000?text=${encodeURIComponent(t)}`);
+    };
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    window.onload = init;
+  </script>
+</body>
+</html>
